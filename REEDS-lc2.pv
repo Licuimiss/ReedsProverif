@@ -1,0 +1,85 @@
+free c: channel.
+type G.
+type GT.
+type exponent.
+type key.          (*对称加密算法的密钥*)
+const g: G[data].  (*G 中的生成元*)
+const gt:GT[data].  (*GT中的生成元*)
+const h,v0,v1: G[data].
+
+fun senc(exponent,key): bitstring.  (*symmetric encryption*)
+fun smG(G,exponent): G.        (*G中的指数运算*)
+fun smGT(GT,exponent):GT.    (*GT中的指数运算*)
+fun mulG(G,G):G.                     (*G中的乘法*)
+fun mulGT(GT,GT):GT.
+fun e(G,G):GT.                         (*双线性对运算*)
+fun mulexp(exponent,exponent): exponent. (*指数的乘法*)
+fun addexp(exponent,exponent): exponent. (*指数的加法*)
+fun divGT(GT,GT):GT.                (*GT中的除法*)
+fun F2(exponent):G.
+
+reduc forall w:exponent,k:key; sdec(senc(w,k),k)=w.
+equation forall x:exponent, y: exponent; smG(smG(g,x),y)=smG(smG(g,y),x). 
+equation forall x:exponent, y: exponent; smGT(smGT(gt,x),y)=smGT(smGT(gt,y),x). 
+equation forall x:exponent, y:exponent; e(smG(g,x),smG(g,y)) = smGT(e(g,g), mulexp(x,y)).  (*双线性对的性质*)
+equation forall w:exponent; F2(w)=mulG(v0,smG(v1,w)).
+
+free meg: GT[private].
+query attacker(meg).
+
+table recieversk(bitstring,G,G).
+
+fun F1(bitstring): G [data,typeConverter].    (*F1 函数*)
+
+let sender (IDA:bitstring, meg: GT, k:key, g1:G)=
+     in (c,ct:bitstring);
+     let w=sdec(ct,k) in
+     out (c, IDA);
+     out (c,g1);
+     new rand:exponent;
+     out(c,(mulGT(smGT(e(g1,h),rand), meg),smG(g,rand),smG(F1(IDA),rand),smG(F2(w),rand)));
+     0.
+
+let owner (k:key, IDA:bitstring, IDB:bitstring, a:exponent, b:exponent)=
+    new w:exponent;
+    out(c,senc(w,k));
+
+    new r:exponent; new rx:exponent; new sx:exponent;
+    let skb1:G = mulG(smG(h,b),smG(F1(IDB),r))  in
+    let skb2:G =  smG(g,r)  in
+    insert recieversk(IDB,skb1,skb2);
+    let rk1:G = mulG(smG(h,a),mulG(smG(F1(IDA),rx),mulG(smG(F2(w),sx),smG(F1(IDB),r)))) in
+    let rk2:G = smG(g,rx) in
+    let rk3:G = smG(g,sx) in
+    out(c,rk1);
+    out(c,rk2);
+    out(c,rk3);
+    0.
+
+
+
+let  broker=
+      in(c,rk1:G);
+      in(c,rk2:G);
+      in(c,rk3:G);
+      in(c,ct:bitstring);
+      let (c0:GT,c1:G,c2:G,c3:G)=ct in
+      out(c,(divGT(c0,divGT(e(rk1,c1),mulGT(e(rk2,c2),e(rk3,c3)))),c1));
+      0.
+
+let reciever(IDB:bitstring)=
+     get recieversk(=IDB,sk1,sk2) in
+     in(c,ct:bitstring);
+     let (c0:GT, c1:G)=ct in
+     let s=divGT(c0, e(sk1,c1)) in
+     0.
+
+process
+   new k:key;               (*shared symmetric key*)
+   new a:exponent;         (*用于生成主密钥*)
+   new b:exponent;
+   new IDA: bitstring;     (*发送与接收者的身份*)
+   new IDB: bitstring;
+
+   ((!sender(IDA,meg,k,smG(g,addexp(a,b))))|!owner(k,IDA,IDB,a,b)|!broker|(!reciever(IDB)))
+
